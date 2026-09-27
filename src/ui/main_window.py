@@ -1,36 +1,19 @@
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from src.network.nt_client import NTClient, RobotSnapshot
-
-
-class ValueCard(QFrame):
-    def __init__(self, title: str, unit: str = "") -> None:
-        super().__init__()
-        self._unit = unit
-        self.setObjectName("valueCard")
-
-        title_label = QLabel(title)
-        title_label.setObjectName("cardTitle")
-
-        self.value_label = QLabel("--")
-        self.value_label.setObjectName("cardValue")
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(title_label)
-        layout.addWidget(self.value_label)
-
-    def set_number(self, value: float, decimals: int = 2) -> None:
-        suffix = f" {self._unit}" if self._unit else ""
-        self.value_label.setText(f"{value:.{decimals}f}{suffix}")
+from src.ui.field_page import FieldPage
+from src.ui.home_page import HomePage
+from src.ui.swerve_page import SwervePage
+from src.ui.vision_page import VisionPage
 
 
 class MainWindow(QMainWindow):
@@ -39,11 +22,12 @@ class MainWindow(QMainWindow):
         self.nt_client = nt_client
 
         self.setWindowTitle("SSRC Dashboard")
-        self.resize(900, 540)
+        self.resize(1180, 720)
+        self.setMinimumSize(940, 600)
 
         root = QWidget()
         self.setCentralWidget(root)
-        main_layout = QVBoxLayout(root)
+        root_layout = QVBoxLayout(root)
 
         header = QHBoxLayout()
         title = QLabel("SSRC DASHBOARD")
@@ -53,27 +37,42 @@ class MainWindow(QMainWindow):
         header.addWidget(title)
         header.addStretch()
         header.addWidget(self.connection_label)
-        main_layout.addLayout(header)
+        root_layout.addLayout(header)
 
-        status_layout = QHBoxLayout()
-        self.navx_label = QLabel("navX2: --")
-        self.calibration_label = QLabel("Calibration: --")
-        self.drive_mode_label = QLabel("Drive: --")
-        status_layout.addWidget(self.navx_label)
-        status_layout.addWidget(self.calibration_label)
-        status_layout.addWidget(self.drive_mode_label)
-        status_layout.addStretch()
-        main_layout.addLayout(status_layout)
+        body = QHBoxLayout()
+        root_layout.addLayout(body, 1)
 
-        cards = QGridLayout()
-        self.pose_x_card = ValueCard("POSE X", "m")
-        self.pose_y_card = ValueCard("POSE Y", "m")
-        self.heading_card = ValueCard("HEADING", "deg")
-        cards.addWidget(self.pose_x_card, 0, 0)
-        cards.addWidget(self.pose_y_card, 0, 1)
-        cards.addWidget(self.heading_card, 0, 2)
-        main_layout.addLayout(cards)
-        main_layout.addStretch()
+        sidebar = QVBoxLayout()
+        sidebar.setSpacing(8)
+        body.addLayout(sidebar)
+
+        self.stack = QStackedWidget()
+        body.addWidget(self.stack, 1)
+
+        self.home_page = HomePage()
+        self.field_page = FieldPage()
+        self.swerve_page = SwervePage()
+        self.vision_page = VisionPage()
+
+        self.pages = [
+            ("HOME", self.home_page),
+            ("FIELD", self.field_page),
+            ("SWERVE", self.swerve_page),
+            ("VISION", self.vision_page),
+        ]
+
+        self.nav_buttons = []
+        for index, (name, page) in enumerate(self.pages):
+            button = QPushButton(name)
+            button.setCheckable(True)
+            button.setObjectName("navButton")
+            button.clicked.connect(lambda checked=False, i=index: self.select_page(i))
+            sidebar.addWidget(button)
+            self.nav_buttons.append(button)
+            self.stack.addWidget(page)
+
+        sidebar.addStretch()
+        self.select_page(0)
 
         self.setStyleSheet(
             """
@@ -86,19 +85,38 @@ class MainWindow(QMainWindow):
                 font-size: 28px;
                 font-weight: 700;
             }
+            #pageTitle {
+                font-size: 22px;
+                font-weight: 700;
+                margin-bottom: 8px;
+            }
             #statusLabel {
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: 700;
                 padding: 8px 12px;
                 border: 1px solid #4b5563;
                 border-radius: 6px;
+            }
+            #navButton {
+                min-width: 112px;
+                min-height: 44px;
+                text-align: left;
+                padding-left: 14px;
+                border: 1px solid #343a46;
+                border-radius: 7px;
+                background: #171a21;
+                font-weight: 700;
+            }
+            #navButton:checked {
+                background: #2b3240;
+                border: 1px solid #697386;
             }
             #valueCard {
                 background: #1b1f27;
                 border: 1px solid #343a46;
                 border-radius: 10px;
                 padding: 12px;
-                min-height: 150px;
+                min-height: 130px;
             }
             #cardTitle {
                 color: #aeb6c4;
@@ -106,7 +124,21 @@ class MainWindow(QMainWindow):
                 font-weight: 600;
             }
             #cardValue {
-                font-size: 36px;
+                font-size: 32px;
+                font-weight: 700;
+            }
+            #summaryLabel {
+                font-size: 15px;
+                font-weight: 600;
+                padding: 8px 2px;
+            }
+            #mutedLabel {
+                color: #aeb6c4;
+                font-size: 13px;
+            }
+            #modulePending {
+                color: #aeb6c4;
+                font-size: 22px;
                 font-weight: 700;
             }
             """
@@ -118,28 +150,23 @@ class MainWindow(QMainWindow):
         self.timer.start()
         self.refresh()
 
+    def select_page(self, index: int) -> None:
+        self.stack.setCurrentIndex(index)
+        for i, button in enumerate(self.nav_buttons):
+            button.setChecked(i == index)
+
     def refresh(self) -> None:
         snapshot = self.nt_client.snapshot()
-        self._update_status(snapshot)
+        self._update_connection(snapshot)
 
-        self.pose_x_card.set_number(snapshot.pose_x_m)
-        self.pose_y_card.set_number(snapshot.pose_y_m)
-        self.heading_card.set_number(snapshot.heading_deg, decimals=1)
+        self.home_page.update_snapshot(snapshot)
+        self.field_page.update_snapshot(snapshot)
+        self.swerve_page.update_snapshot(snapshot)
+        self.vision_page.update_snapshot(snapshot)
 
-    def _update_status(self, snapshot: RobotSnapshot) -> None:
+    def _update_connection(self, snapshot: RobotSnapshot) -> None:
         self.connection_label.setText(
             "ROBOT CONNECTED" if snapshot.connected else "ROBOT DISCONNECTED"
-        )
-        self.navx_label.setText(
-            "navX2: CONNECTED" if snapshot.navx_connected else "navX2: DISCONNECTED"
-        )
-        self.calibration_label.setText(
-            "Calibration: RUNNING" if snapshot.navx_calibrating else "Calibration: READY"
-        )
-        self.drive_mode_label.setText(
-            "Drive: FIELD RELATIVE"
-            if snapshot.field_relative_enabled
-            else "Drive: ROBOT RELATIVE"
         )
 
     def closeEvent(self, event) -> None:
