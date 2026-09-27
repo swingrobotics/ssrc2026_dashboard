@@ -1,23 +1,33 @@
 import math
+from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QBrush, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QBrush, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from src.network.nt_client import RobotSnapshot
 
 
-FIELD_LENGTH_M = 17.5
-FIELD_WIDTH_M = 8.1
+# PathPlanner's bundled 2026 REBUILT field image metadata:
+# image 3508x1814 px, 200 px/m, 0.5 m image margin around the playable field.
+FIELD_IMAGE_WIDTH_PX = 3508.0
+FIELD_IMAGE_HEIGHT_PX = 1814.0
+FIELD_PIXELS_PER_METER = 200.0
+FIELD_IMAGE_MARGIN_M = 0.5
+FIELD_LENGTH_M = FIELD_IMAGE_WIDTH_PX / FIELD_PIXELS_PER_METER - 2 * FIELD_IMAGE_MARGIN_M
+FIELD_WIDTH_M = FIELD_IMAGE_HEIGHT_PX / FIELD_PIXELS_PER_METER - 2 * FIELD_IMAGE_MARGIN_M
+
+ASSET_PATH = Path(__file__).resolve().parents[2] / "assets" / "field26.png"
 
 
 class FieldCanvas(QWidget):
     def __init__(self) -> None:
         super().__init__()
-        self.setMinimumHeight(360)
+        self.setMinimumHeight(420)
         self._x = 0.0
         self._y = 0.0
         self._heading_deg = 0.0
+        self._field_pixmap = QPixmap(str(ASSET_PATH))
 
     def set_pose(self, x_m: float, y_m: float, heading_deg: float) -> None:
         self._x = x_m
@@ -25,33 +35,63 @@ class FieldCanvas(QWidget):
         self._heading_deg = heading_deg
         self.update()
 
-    def paintEvent(self, event) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+    def _image_rect(self) -> QRectF:
+        margin = 12.0
+        available_w = max(10.0, self.width() - 2 * margin)
+        available_h = max(10.0, self.height() - 2 * margin)
 
-        margin = 24.0
-        field_rect = QRectF(
-            margin,
-            margin,
-            max(10.0, self.width() - 2 * margin),
-            max(10.0, self.height() - 2 * margin),
+        aspect = FIELD_IMAGE_WIDTH_PX / FIELD_IMAGE_HEIGHT_PX
+        if available_w / available_h > aspect:
+            draw_h = available_h
+            draw_w = draw_h * aspect
+        else:
+            draw_w = available_w
+            draw_h = draw_w / aspect
+
+        left = (self.width() - draw_w) / 2.0
+        top = (self.height() - draw_h) / 2.0
+        return QRectF(left, top, draw_w, draw_h)
+
+    def _field_rect(self, image_rect: QRectF) -> QRectF:
+        scale = image_rect.width() / FIELD_IMAGE_WIDTH_PX
+        margin_px = FIELD_IMAGE_MARGIN_M * FIELD_PIXELS_PER_METER * scale
+        return QRectF(
+            image_rect.left() + margin_px,
+            image_rect.top() + margin_px,
+            image_rect.width() - 2 * margin_px,
+            image_rect.height() - 2 * margin_px,
         )
 
-        painter.setPen(QPen(Qt.GlobalColor.gray, 1))
-        painter.setBrush(QBrush(Qt.GlobalColor.transparent))
-        painter.drawRoundedRect(field_rect, 8, 8)
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QBrush(Qt.GlobalColor.black))
 
-        # Simple meter grid for odometry visualization. This is not a season field image.
-        painter.setPen(QPen(Qt.GlobalColor.darkGray, 1))
-        for meter in range(1, int(FIELD_LENGTH_M)):
-            x = field_rect.left() + field_rect.width() * meter / FIELD_LENGTH_M
-            painter.drawLine(QPointF(x, field_rect.top()), QPointF(x, field_rect.bottom()))
-        for meter in range(1, int(FIELD_WIDTH_M)):
-            y = field_rect.bottom() - field_rect.height() * meter / FIELD_WIDTH_M
-            painter.drawLine(QPointF(field_rect.left(), y), QPointF(field_rect.right(), y))
+        image_rect = self._image_rect()
 
+        if not self._field_pixmap.isNull():
+            painter.drawPixmap(
+                image_rect,
+                self._field_pixmap,
+                QRectF(self._field_pixmap.rect()),
+            )
+        else:
+            painter.setPen(QPen(Qt.GlobalColor.gray, 1))
+            painter.drawRect(image_rect)
+            painter.drawText(
+                image_rect,
+                Qt.AlignmentFlag.AlignCenter,
+                "2026 field image missing",
+            )
+
+        field_rect = self._field_rect(image_rect)
+
+        # WPILib field coordinates: +X runs from the blue end toward red,
+        # +Y runs across the field. Clamp only for drawing so bad odometry
+        # cannot place the marker outside the widget.
         clamped_x = min(max(self._x, 0.0), FIELD_LENGTH_M)
         clamped_y = min(max(self._y, 0.0), FIELD_WIDTH_M)
+
         px = field_rect.left() + field_rect.width() * clamped_x / FIELD_LENGTH_M
         py = field_rect.bottom() - field_rect.height() * clamped_y / FIELD_WIDTH_M
 
@@ -59,6 +99,7 @@ class FieldCanvas(QWidget):
         forward = QPointF(math.cos(angle), math.sin(angle))
         side = QPointF(-forward.y(), forward.x())
 
+        # Small triangular robot marker. The point of the triangle is robot +X.
         nose = QPointF(px + forward.x() * 18, py + forward.y() * 18)
         back_left = QPointF(
             px - forward.x() * 12 + side.x() * 10,
@@ -73,6 +114,9 @@ class FieldCanvas(QWidget):
         painter.setBrush(QBrush(Qt.GlobalColor.white))
         painter.drawPolygon(QPolygonF([nose, back_left, back_right]))
 
+        painter.setBrush(QBrush(Qt.GlobalColor.transparent))
+        painter.drawEllipse(QPointF(px, py), 5, 5)
+
 
 class FieldPage(QWidget):
     def __init__(self) -> None:
@@ -80,14 +124,16 @@ class FieldPage(QWidget):
 
         layout = QVBoxLayout(self)
 
-        heading = QLabel("FIELD / ODOMETRY")
+        heading = QLabel("2026 REBUILT FIELD")
         heading.setObjectName("pageTitle")
         layout.addWidget(heading)
 
         note = QLabel(
-            "Current view uses odometry X/Y/heading. It is a coordinate view, not the official season field image."
+            "Official-season field view using the 2026 REBUILT field asset bundled with PathPlanner. "
+            "The white marker is the robot odometry pose."
         )
         note.setObjectName("mutedLabel")
+        note.setWordWrap(True)
         layout.addWidget(note)
 
         self.pose_label = QLabel("X: -- m    Y: -- m    Heading: -- deg")
