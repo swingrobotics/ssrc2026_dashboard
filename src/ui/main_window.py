@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.network.nt_client import NTClient, RobotSnapshot
+from src.ui.auto_page import AutoPage
 from src.ui.camera_page import CameraPage
 from src.ui.field_page import FieldPage
 from src.ui.home_page import HomePage
@@ -52,6 +53,7 @@ class MainWindow(QMainWindow):
 
         self.home_page = HomePage()
         self.field_page = FieldPage()
+        self.auto_page = AutoPage()
         self.swerve_page = SwervePage()
         self.vision_page = VisionPage()
         self.camera_page = CameraPage()
@@ -59,6 +61,7 @@ class MainWindow(QMainWindow):
         self.pages = [
             ("HOME", self.home_page),
             ("FIELD", self.field_page),
+            ("AUTO / PATH", self.auto_page),
             ("SWERVE", self.swerve_page),
             ("VISION", self.vision_page),
             ("CAMERA", self.camera_page),
@@ -195,6 +198,7 @@ class MainWindow(QMainWindow):
 
         self.home_page.update_snapshot(snapshot)
         self.field_page.update_snapshot(snapshot)
+        self.auto_page.update_snapshot(snapshot)
         self.swerve_page.update_snapshot(snapshot)
         self.vision_page.update_snapshot(snapshot)
 

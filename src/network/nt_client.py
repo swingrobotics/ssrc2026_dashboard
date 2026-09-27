@@ -20,6 +20,17 @@ class RobotSnapshot:
     vision_target_visible: bool
     vision_target_yaw_deg: float
     pathplanner_configured: bool
+    selected_auto: str
+    autonomous_enabled: bool
+    pathplanner_target_valid: bool
+    pathplanner_target_x_m: float
+    pathplanner_target_y_m: float
+    pathplanner_target_heading_deg: float
+    pathplanner_active_path: str
+    pathplanner_path_points: int
+    robot_velocity_x_mps: float
+    robot_velocity_y_mps: float
+    robot_angular_velocity_dps: float
 
 
 class NTClient:
@@ -35,6 +46,9 @@ class NTClient:
         self._pose_y = dashboard.getDoubleTopic("Pose Y").subscribe(0.0)
         self._pose_heading = dashboard.getDoubleTopic("Pose Heading").subscribe(0.0)
         self._field_relative = dashboard.getBooleanTopic("Field Relative Enabled").subscribe(False)
+        self._robot_velocity_x = dashboard.getDoubleTopic("Robot Velocity X").subscribe(0.0)
+        self._robot_velocity_y = dashboard.getDoubleTopic("Robot Velocity Y").subscribe(0.0)
+        self._robot_angular_velocity = dashboard.getDoubleTopic("Robot Angular Velocity").subscribe(0.0)
 
         # navX2 values already published by DriveSubsystem.
         self._navx_connected = dashboard.getBooleanTopic("NavX Connected").subscribe(False)
@@ -49,8 +63,16 @@ class NTClient:
         self._vision_target_visible = dashboard.getBooleanTopic("Vision Target Visible").subscribe(False)
         self._vision_target_yaw = dashboard.getDoubleTopic("Vision Target Yaw").subscribe(0.0)
 
-        # PathPlanner setup status.
+        # PathPlanner / autonomous telemetry.
         self._pathplanner_configured = dashboard.getBooleanTopic("PathPlanner Configured").subscribe(False)
+        self._selected_auto = dashboard.getStringTopic("Selected Auto").subscribe("None")
+        self._autonomous_enabled = dashboard.getBooleanTopic("Autonomous Enabled").subscribe(False)
+        self._pp_target_valid = dashboard.getBooleanTopic("PathPlanner Target Valid").subscribe(False)
+        self._pp_target_x = dashboard.getDoubleTopic("PathPlanner Target X").subscribe(0.0)
+        self._pp_target_y = dashboard.getDoubleTopic("PathPlanner Target Y").subscribe(0.0)
+        self._pp_target_heading = dashboard.getDoubleTopic("PathPlanner Target Heading").subscribe(0.0)
+        self._pp_active_path = dashboard.getStringTopic("PathPlanner Active Path").subscribe("")
+        self._pp_path_points = dashboard.getDoubleTopic("PathPlanner Path Points").subscribe(0.0)
 
         self.instance.startClient4("SSRC Dashboard")
         self.instance.setServerTeam(team_number)
@@ -76,6 +98,17 @@ class NTClient:
             vision_target_visible=self._vision_target_visible.get(),
             vision_target_yaw_deg=self._vision_target_yaw.get(),
             pathplanner_configured=self._pathplanner_configured.get(),
+            selected_auto=self._selected_auto.get(),
+            autonomous_enabled=self._autonomous_enabled.get(),
+            pathplanner_target_valid=self._pp_target_valid.get(),
+            pathplanner_target_x_m=self._pp_target_x.get(),
+            pathplanner_target_y_m=self._pp_target_y.get(),
+            pathplanner_target_heading_deg=self._pp_target_heading.get(),
+            pathplanner_active_path=self._pp_active_path.get(),
+            pathplanner_path_points=int(round(self._pp_path_points.get())),
+            robot_velocity_x_mps=self._robot_velocity_x.get(),
+            robot_velocity_y_mps=self._robot_velocity_y.get(),
+            robot_angular_velocity_dps=self._robot_angular_velocity.get(),
         )
 
     def close(self) -> None:
