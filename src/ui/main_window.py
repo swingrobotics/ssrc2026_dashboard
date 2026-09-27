@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from src.network.nt_client import NTClient, RobotSnapshot
+from src.ui.camera_page import CameraPage
 from src.ui.field_page import FieldPage
 from src.ui.home_page import HomePage
 from src.ui.swerve_page import SwervePage
@@ -53,12 +54,14 @@ class MainWindow(QMainWindow):
         self.field_page = FieldPage()
         self.swerve_page = SwervePage()
         self.vision_page = VisionPage()
+        self.camera_page = CameraPage()
 
         self.pages = [
             ("HOME", self.home_page),
             ("FIELD", self.field_page),
             ("SWERVE", self.swerve_page),
             ("VISION", self.vision_page),
+            ("CAMERA", self.camera_page),
         ]
 
         self.nav_buttons = []
@@ -141,6 +144,33 @@ class MainWindow(QMainWindow):
                 font-size: 22px;
                 font-weight: 700;
             }
+            #cameraView {
+                background: #08090c;
+                border: 1px solid #343a46;
+                border-radius: 8px;
+                color: #8b95a5;
+                font-size: 16px;
+            }
+            QLineEdit {
+                min-height: 34px;
+                border: 1px solid #343a46;
+                border-radius: 6px;
+                padding: 0 10px;
+                background: #171a21;
+                color: #f3f4f6;
+            }
+            QPushButton {
+                min-height: 34px;
+                padding: 0 10px;
+                border: 1px solid #343a46;
+                border-radius: 6px;
+                background: #20242d;
+                color: #f3f4f6;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #2a303b;
+            }
             """
         )
 
@@ -154,6 +184,10 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(index)
         for i, button in enumerate(self.nav_buttons):
             button.setChecked(i == index)
+
+        # Camera streaming is deliberately enabled only while the camera page is visible.
+        # This reduces network/CPU load and prevents unnecessary video latency elsewhere.
+        self.camera_page.set_active(self.stack.currentWidget() is self.camera_page)
 
     def refresh(self) -> None:
         snapshot = self.nt_client.snapshot()
@@ -170,5 +204,6 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event) -> None:
+        self.camera_page.shutdown()
         self.nt_client.close()
         super().closeEvent(event)
